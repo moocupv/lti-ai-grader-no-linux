@@ -224,7 +224,7 @@ SEND_GRADE_TO_LMS=true
 DEBUG=false
 ```
 
-Click **Save** — Railway redeploys automatically.
+Click **Deploy** — Railway redeploys automatically.
 
 ### Step 6 — Get your public URL
 
