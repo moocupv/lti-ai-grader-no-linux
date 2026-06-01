@@ -82,7 +82,7 @@ lti-ai-grader-cloud/
 ### Prerequisites
 - GitHub account with this repo
 - Render account (free at [render.com](https://render.com))
-- Gemini API key (free at [aistudio.google.com](https://aistudio.google.com)) or OpenAI key
+- An API key from one of the supported providers (see table below)
 
 ### Steps
 
@@ -95,11 +95,37 @@ lti-ai-grader-cloud/
 
 **2. Set secrets in the Render dashboard**
 
-Go to your web service → **Environment** tab and add:
+Go to your web service → **Environment** tab and add the variables for your chosen AI provider:
+
+**Option A — Google Gemini** (free tier available at [aistudio.google.com](https://aistudio.google.com))
 
 | Key | Value |
 |---|---|
+| `AI_GRADER_PROVIDER` | `google` |
 | `AI_GRADER_API_KEY_GOOGLE` | Your Gemini API key |
+| `AI_GRADER_MODEL_NAME` | `gemini-2.5-flash-lite` |
+
+**Option B — OpenAI**
+
+| Key | Value |
+|---|---|
+| `AI_GRADER_PROVIDER` | `openai` |
+| `AI_GRADER_API_KEY_OPENAI` | Your OpenAI API key (`sk-...`) |
+| `AI_GRADER_MODEL_NAME` | `gpt-4o-mini` |
+
+**Option C — Any OpenAI-compatible API** (Azure, Mistral, Ollama, LM Studio, OpenRouter, etc.)
+
+| Key | Value |
+|---|---|
+| `AI_GRADER_PROVIDER` | `openai` |
+| `AI_GRADER_API_KEY_OPENAI` | Your API key for that provider |
+| `AI_GRADER_MODEL_NAME` | Model name as required by that provider |
+| `AI_GRADER_API_URL` | Base URL of the provider (e.g. `https://api.mistral.ai`, `http://localhost:11434`) |
+
+Then add the following for all options:
+
+| Key | Value |
+|---|---|
 | `LTI_OPENEDX_KEY` | Consumer key you will enter in Open edX (e.g. `openedx_key`) |
 | `LTI_OPENEDX_SECRET` | A long random secret string |
 | `LTI_MOODLE_KEY` | Consumer key for Moodle (e.g. `moodle_key`) |
@@ -117,15 +143,25 @@ Your app will be at a URL like `https://lti-ai-grader-xxxx.onrender.com`
 
 ## Option 2 — Deploy to Railway (recommended, $5 free credit/month)
 
-Railway does not have cold starts — the service is always on. The free credit covers moderate educational use (up to ~100 evaluations/day). If you exceed it, the Hobby plan is $5/month flat.
+Railway does not have cold starts — the service is always on. The free credit covers moderate educational use (up to ~100 evaluations/day). If you exceed it, the Hobby plan is $5/month flat. The public URL uses HTTPS automatically — no configuration needed.
 
 ### Step 1 — Create account
 
 Go to [railway.app](https://railway.app) and sign up **with your GitHub account**. This is important because you will connect your repo directly.
 
-### Step 2 — Create the project
+### Step 2 — Grant GitHub permissions
 
-Once inside the Railway dashboard:
+When you click **New Project → Deploy from GitHub repo**, Railway may show "No repositories found". This means it does not yet have permission to see your repos:
+
+- Click **Configure GitHub App**
+- GitHub opens a permissions page → click **Install & Authorize**
+- Choose your account
+- Under **Repository access** select **Only select repositories** and tick `lti-ai-grader-no-linux`
+- Click **Save**
+
+Back in Railway, click **Refresh** and the repository will appear.
+
+### Step 3 — Create the project
 
 - Click **New Project**
 - Choose **Deploy from GitHub repo**
@@ -134,7 +170,7 @@ Once inside the Railway dashboard:
 
 Do not close the page — continue to the next step while it builds.
 
-### Step 3 — Add Redis
+### Step 4 — Add Redis
 
 Inside the same project:
 
@@ -144,21 +180,45 @@ Inside the same project:
 
 Once created, click on the Redis service → **Variables** tab → copy the value of `REDIS_URL`. You will need it in the next step.
 
-### Step 4 — Set environment variables
+### Step 5 — Set environment variables
 
-Click on your web service (the one with the code) → **Variables** tab → **Raw Editor** and paste the following, replacing the values with your own:
+Click on your web service (the one with the code) → **Variables** tab → **Raw Editor** and paste the block for your chosen AI provider, then add the common variables below it.
+
+**Option A — Google Gemini**
 
 ```
 AI_GRADER_PROVIDER=google
 AI_GRADER_API_KEY_GOOGLE=your-gemini-api-key
 AI_GRADER_MODEL_NAME=gemini-2.5-flash-lite
+```
+
+**Option B — OpenAI**
+
+```
+AI_GRADER_PROVIDER=openai
+AI_GRADER_API_KEY_OPENAI=sk-your-openai-key
+AI_GRADER_MODEL_NAME=gpt-4o-mini
+```
+
+**Option C — Any OpenAI-compatible API** (Azure, Mistral, Ollama, OpenRouter, etc.)
+
+```
+AI_GRADER_PROVIDER=openai
+AI_GRADER_API_KEY_OPENAI=your-api-key-for-that-provider
+AI_GRADER_MODEL_NAME=model-name-as-required-by-that-provider
+AI_GRADER_API_URL=https://base-url-of-the-provider.com
+```
+
+**Common variables — add these regardless of provider:**
+
+```
 LTI_OPENEDX_KEY=openedx_key
 LTI_OPENEDX_SECRET=a-long-random-secret
 LTI_MOODLE_KEY=moodle_key
 LTI_MOODLE_SECRET=another-long-random-secret
 ALLOWED_ORIGINS=https://yourlms.com,https://studio.yourlms.com
 LTI_ALLOWED_DOMAINS=yourlms.com
-REDIS_URL=redis://... (paste the value copied in Step 3)
+REDIS_URL=redis://... (paste the value copied in Step 4)
 SESSION_TIMEOUT=3600
 SEND_GRADE_TO_LMS=true
 DEBUG=false
@@ -166,7 +226,7 @@ DEBUG=false
 
 Click **Save** — Railway redeploys automatically.
 
-### Step 5 — Get your public URL
+### Step 6 — Get your public URL
 
 In your web service → **Settings** tab → **Networking** section → click **Generate Domain**.
 
@@ -276,9 +336,13 @@ This lets a single deployed grader serve many different writing tasks across a c
 - On Render, use the **Internal** Redis URL (not the external one).
 - On Railway, copy the `REDIS_URL` from the Redis service Variables tab.
 
+**Railway shows "No repositories found"**
+- Click **Configure GitHub App** and follow the permissions steps in Step 2 above.
+
 **AI API error**
 - Verify your API key is valid and the model name is correct.
 - Gemini free tier has rate limits; `gemini-2.5-flash-lite` offers the lowest latency.
+- For OpenAI-compatible providers, make sure `AI_GRADER_API_URL` points to the correct base URL and that the model name matches exactly what that provider expects.
 
 ---
 
