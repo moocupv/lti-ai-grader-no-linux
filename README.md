@@ -55,57 +55,127 @@ All security mechanisms from the original CGI version are preserved:
 
 ---
 
-## Deploy to Render.com (recommended — free)
+## File structure
+
+```
+lti-ai-grader-cloud/
+├── app.py                             # Flask app: routes /lti-launch and /grade
+├── aigrader_engine.py                 # Pure grading logic (AI call, OAuth, grade passback)
+├── grader_config.py                   # Grader config read from env vars
+│                                      # Edit system_instructions here to change the prompt
+├── static/
+│   └── aigrader.js                    # Frontend: form, feedback display, Open edX postMessage
+├── templates/
+│   └── C1-writing-correction-LTI.html # Edit CONFIG here for your exam
+├── javascript-for-openedx.html        # Open edX task-injection helper
+├── .env.example                       # Environment variable template
+├── requirements.txt
+├── render.yaml                        # Render.com one-click deploy config
+├── Procfile                           # Railway / Heroku process config
+└── README.md
+```
+
+---
+
+## Option 1 — Deploy to Render.com (free, easiest)
 
 ### Prerequisites
-- GitHub account
-- Render account (free at render.com)
+- GitHub account with this repo
+- Render account (free at [render.com](https://render.com))
 - Gemini API key (free at [aistudio.google.com](https://aistudio.google.com)) or OpenAI key
 
 ### Steps
 
-**1. Fork / push this repo to GitHub**
+**1. Connect to Render**
 
-**2. Connect to Render**
-- Go to [render.com/dashboard](https://dashboard.render.com)
+- Go to [dashboard.render.com](https://dashboard.render.com)
 - Click **New +** → **Blueprint**
-- Connect your GitHub repo
+- Connect your GitHub account and select this repository
 - Render reads `render.yaml` and creates the web service + Redis automatically
 
-**3. Set secrets in the Render dashboard**
+**2. Set secrets in the Render dashboard**
 
-Go to your service → **Environment** and add:
+Go to your web service → **Environment** tab and add:
 
 | Key | Value |
 |---|---|
 | `AI_GRADER_API_KEY_GOOGLE` | Your Gemini API key |
-| `LTI_OPENEDX_KEY` | Consumer key you'll enter in Open edX (e.g. `mygrader`) |
+| `LTI_OPENEDX_KEY` | Consumer key you will enter in Open edX (e.g. `openedx_key`) |
 | `LTI_OPENEDX_SECRET` | A long random secret string |
-| `LTI_MOODLE_KEY` | Consumer key for Moodle (e.g. `mygrader`) |
+| `LTI_MOODLE_KEY` | Consumer key for Moodle (e.g. `moodle_key`) |
 | `LTI_MOODLE_SECRET` | A long random secret string |
 | `ALLOWED_ORIGINS` | `https://yourlms.com,https://studio.yourlms.com` |
 | `LTI_ALLOWED_DOMAINS` | `yourlms.com` |
 
-**4. Note the service URL**
+**3. Get your URL**
 
-Your app will be at `https://lti-ai-grader-xxxx.onrender.com`
+Your app will be at a URL like `https://lti-ai-grader-xxxx.onrender.com`
 
-> ⚠️ **Free tier note:** Render's free web service sleeps after 15 min of inactivity (cold start ~30 s). If your LMS has a short LTI launch timeout, upgrade to the **Starter** plan ($7/mo) or use Railway instead.
+> ⚠️ **Free tier note:** Render's free web service sleeps after 15 min of inactivity and takes ~30 s to wake up. If your LMS has a short LTI launch timeout this can cause errors. Upgrade to the **Starter** plan ($7/mo) or use Railway (Option 2) to avoid this.
 
 ---
 
-## Deploy to Railway (alternative — $5 free credit/month)
+## Option 2 — Deploy to Railway (recommended, $5 free credit/month)
 
-**1. Push repo to GitHub**
+Railway does not have cold starts — the service is always on. The free credit covers moderate educational use (up to ~100 evaluations/day). If you exceed it, the Hobby plan is $5/month flat.
 
-**2. New project → Deploy from GitHub repo**
+### Step 1 — Create account
 
-**3. Add a Redis service:**  
-   New → Database → Redis
+Go to [railway.app](https://railway.app) and sign up **with your GitHub account**. This is important because you will connect your repo directly.
 
-**4. Set environment variables** (same list as Render above, plus `REDIS_URL` from the Redis service)
+### Step 2 — Create the project
 
-**5. Your app is live** — no cold starts on Railway.
+Once inside the Railway dashboard:
+
+- Click **New Project**
+- Choose **Deploy from GitHub repo**
+- Select this repository (`lti-ai-grader-no-linux`)
+- Railway detects the `Procfile` automatically and starts building
+
+Do not close the page — continue to the next step while it builds.
+
+### Step 3 — Add Redis
+
+Inside the same project:
+
+- Click **+ New** (top right, inside the project view)
+- Choose **Database → Add Redis**
+- Railway creates the Redis service and connects it internally to your project
+
+Once created, click on the Redis service → **Variables** tab → copy the value of `REDIS_URL`. You will need it in the next step.
+
+### Step 4 — Set environment variables
+
+Click on your web service (the one with the code) → **Variables** tab → **Raw Editor** and paste the following, replacing the values with your own:
+
+```
+AI_GRADER_PROVIDER=google
+AI_GRADER_API_KEY_GOOGLE=your-gemini-api-key
+AI_GRADER_MODEL_NAME=gemini-2.5-flash-lite
+LTI_OPENEDX_KEY=openedx_key
+LTI_OPENEDX_SECRET=a-long-random-secret
+LTI_MOODLE_KEY=moodle_key
+LTI_MOODLE_SECRET=another-long-random-secret
+ALLOWED_ORIGINS=https://yourlms.com,https://studio.yourlms.com
+LTI_ALLOWED_DOMAINS=yourlms.com
+REDIS_URL=redis://... (paste the value copied in Step 3)
+SESSION_TIMEOUT=3600
+SEND_GRADE_TO_LMS=true
+DEBUG=false
+```
+
+Click **Save** — Railway redeploys automatically.
+
+### Step 5 — Get your public URL
+
+In your web service → **Settings** tab → **Networking** section → click **Generate Domain**.
+
+You will get a URL like:
+```
+https://lti-ai-grader-no-linux-production.up.railway.app
+```
+
+This is the URL you will use when configuring the LMS.
 
 ---
 
@@ -113,20 +183,23 @@ Your app will be at `https://lti-ai-grader-xxxx.onrender.com`
 
 ### Open edX
 
-1. **Settings → Advanced Settings** → add `lti_consumer` to *Advanced module list*
-2. **LTI Passports** → add: `mygrader:LTI_OPENEDX_KEY:LTI_OPENEDX_SECRET`
+1. **Settings → Advanced Settings** → add `lti_consumer` to the *Advanced module list*
+2. **LTI Passports** → add one line per LMS key in this format:
+   ```
+   openedx_key:openedx_key:a-long-random-secret
+   ```
 3. In a unit → **Advanced** → **LTI Consumer**:
-   - **LTI ID:** `mygrader`
-   - **LTI URL:** `https://your-app.onrender.com/lti-launch?file=/C1-writing-correction-LTI.html`
+   - **LTI ID:** `openedx_key`
+   - **LTI URL:** `https://your-app-url.com/lti-launch?file=C1-writing-correction-LTI.html`
    - **LTI version:** 1.1/1.2
    - **Scored:** True
-   - **Weight:** 5 (or your max score)
+   - **Weight:** 5 (or your maximum score)
 
 ### Moodle
 
 1. **Site administration → Plugins → Activity modules → External tool → Manage tools**
 2. Add tool:
-   - **Tool URL:** `https://your-app.onrender.com/lti-launch?file=/C1-writing-correction-LTI.html`
+   - **Tool URL:** `https://your-app-url.com/lti-launch?file=C1-writing-correction-LTI.html`
    - **Consumer key:** value of `LTI_MOODLE_KEY`
    - **Shared secret:** value of `LTI_MOODLE_SECRET`
    - **Send grades:** Yes
@@ -137,11 +210,11 @@ Your app will be at `https://lti-ai-grader-xxxx.onrender.com`
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/yourname/lti-ai-grader-cloud
-cd lti-ai-grader-cloud
+git clone https://github.com/moocupv/lti-ai-grader-no-linux
+cd lti-ai-grader-no-linux
 pip install -r requirements.txt
 
-# 2. Start a local Redis (Docker)
+# 2. Start a local Redis (requires Docker)
 docker run -d -p 6379:6379 redis:7-alpine
 
 # 3. Configure
@@ -149,8 +222,6 @@ cp .env.example .env
 # Edit .env with your keys
 
 # 4. Run
-python -m dotenv run python app.py
-# or
 flask --app app run --debug
 ```
 
@@ -159,36 +230,22 @@ The grader HTML is at `http://localhost:5000/C1-writing-correction-LTI.html`.
 
 ---
 
-## File structure
+## Adapting to a different exam
 
+**Change the grading prompt:**  
+Edit `grader_config.py` → `GRADER_SYSTEM_INSTRUCTIONS`. The prompt must instruct the LLM to output a line matching the `grade_identifier` pattern, for example:
 ```
-lti-ai-grader-cloud/
-├── app.py                    # Flask app: routes /lti-launch and /grade
-├── aigrader_engine.py        # Pure grading logic (AI call, OAuth, grade passback)
-├── grader_config.py          # Grader config read from env vars
-│                             # Edit system_instructions here to change the prompt
-├── static/
-│   └── aigrader.js           # Frontend: form, feedback display, Open edX postMessage
-├── templates/
-│   └── C1-writing-correction-LTI.html   # Edit CONFIG here for your exam
-├── javascript-for-openedx.html           # Open edX task-injection helper
-├── .env.example              # Environment variable template
-├── requirements.txt
-├── render.yaml               # Render.com one-click deploy config
-├── Procfile                  # Railway / Heroku process config
-└── README.md
+FINAL_GRADE: 3/5
 ```
 
----
+**Change the task shown to students:**  
+Edit `templates/C1-writing-correction-LTI.html` → the `CONFIG` object at the top:
+- `taskHTML` — the task instructions shown above the textarea
+- `initialValue` — the default text pre-filled in the textarea
+- `title` — the page title
 
-## Adding a new exam (different prompt or task)
-
-1. **Edit the prompt** in `grader_config.py` → `GRADER_SYSTEM_INSTRUCTIONS`  
-   (or set `GRADER_SYSTEM_INSTRUCTIONS` as an env var for the production deployment)
-
-2. **Edit the task** in `templates/C1-writing-correction-LTI.html` → `CONFIG.taskHTML` and `CONFIG.initialValue`
-
-3. **For multiple simultaneous exams**, duplicate the HTML file (e.g. `B2-writing-LTI.html`) and point each LTI component to a different `?file=` value. A single deployment serves all of them.
+**Multiple exams from a single deployment:**  
+Duplicate the HTML file (e.g. `B2-writing-LTI.html`) and point each LTI component to a different `?file=` value. A single deployment serves all of them.
 
 ---
 
@@ -198,7 +255,7 @@ To set different task descriptions per unit without editing the HTML:
 
 1. Add a **Text component** immediately *before* the LTI component in the unit
 2. Use the HTML editor to paste the content of `javascript-for-openedx.html`
-3. Replace the `taskText` variable with your specific task
+3. Edit the `taskText` variable with your specific task
 
 This lets a single deployed grader serve many different writing tasks across a course.
 
@@ -206,21 +263,22 @@ This lets a single deployed grader serve many different writing tasks across a c
 
 ## Troubleshooting
 
-**Grade not appearing in the LMS gradebook**  
-- Check that `LTI_OPENEDX_KEY` / `LTI_OPENEDX_SECRET` match exactly what is in the LMS LTI passport.  
-- Verify `LTI_ALLOWED_DOMAINS` includes your LMS domain.  
-- Set `DEBUG=true` temporarily and check the Render logs.
+**Grade not appearing in the LMS gradebook**
+- Check that the LTI key and secret match exactly what is configured in the LMS.
+- Verify `LTI_ALLOWED_DOMAINS` includes your LMS domain.
+- Set `DEBUG=true` temporarily and check the platform logs.
 
-**Cold start / timeout on LTI launch**  
+**Cold start / timeout on LTI launch (Render only)**
 - Upgrade Render to Starter plan, or switch to Railway.
 
-**Redis connection error on startup**  
-- Make sure the Redis service is running and `REDIS_URL` is set correctly.  
+**Redis connection error on startup**
+- Make sure the Redis service is running and `REDIS_URL` is set correctly.
 - On Render, use the **Internal** Redis URL (not the external one).
+- On Railway, copy the `REDIS_URL` from the Redis service Variables tab.
 
-**AI API error**  
-- Verify `AI_GRADER_API_KEY_GOOGLE` is valid and the model name (`AI_GRADER_MODEL_NAME`) is correct.
-- Gemini free tier has rate limits; consider `gemini-2.5-flash-lite` for lowest latency.
+**AI API error**
+- Verify your API key is valid and the model name is correct.
+- Gemini free tier has rate limits; `gemini-2.5-flash-lite` offers the lowest latency.
 
 ---
 
