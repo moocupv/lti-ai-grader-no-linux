@@ -1,0 +1,43 @@
+# render.yaml
+# One-click deployment for Render.com
+# Docs: https://render.com/docs/infrastructure-as-code
+
+services:
+  - type: web
+    name: lti-ai-grader
+    runtime: python
+    plan: free                 # upgrade to "starter" to avoid cold starts
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 2 --timeout 180 --bind 0.0.0.0:$PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: REDIS_URL
+        fromService:
+          name: lti-session-store
+          type: redis
+          property: connectionString
+      # ── Set the values below in the Render dashboard (Environment tab) ──
+      - key: AI_GRADER_PROVIDER
+        value: google
+      - key: AI_GRADER_MODEL_NAME
+        value: gemini-2.5-flash-lite
+      - key: SESSION_TIMEOUT
+        value: "3600"
+      - key: SEND_GRADE_TO_LMS
+        value: "true"
+      - key: DEBUG
+        value: "false"
+      # These must be set manually (they contain secrets):
+      #   AI_GRADER_API_KEY_GOOGLE
+      #   LTI_OPENEDX_KEY / LTI_OPENEDX_SECRET
+      #   LTI_MOODLE_KEY  / LTI_MOODLE_SECRET
+      #   ALLOWED_ORIGINS
+      #   LTI_ALLOWED_DOMAINS
+
+  - type: redis
+    name: lti-session-store
+    plan: free
+    maxmemoryPolicy: allkeys-lru   # evict oldest sessions when memory is full
+    ipAllowList: []                # only accessible from Render internal network
